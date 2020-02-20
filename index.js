@@ -1,28 +1,41 @@
-var PluginError = require('plugin-error')
+const PluginError = require('plugin-error')
 	, log = require('fancy-log')
-	, through = require('through2');
+	, through = require('through2'),
+	fetch = require('node-fetch');;
 	// , aws = require('aws-sdk');
 
 module.exports = function (options) {
-	options.wait = !!options.wait;
+	// options.wait = !!options.wait;
 	options.indexRootPath = !!options.indexRootPath;
 
 	// var cloudfront = new aws.CloudFront();
 
 	var _c = {
 		NAME: 'gulp-cloudflare-invalidate-aws-publish',
+		endpoint: 'https://api.cloudflare.com/client/v4/',
 		zone: options.zone || process.env.CF_ZONE,
 		email: options.email || process.env.CF_EMAIL,
+		key: options.key || process.env.CF_KEY,
 		token: options.token || process.env.CF_TOKEN,
 		states: { update: true, create: true },
+		urlPrefix: '/',
 		originPathRegex: false,
 		indexRootPath: false
 	};
 	if(options.states)
 	{
-		for (var i = options.states.length - 1; i >= 0; i--) {
+		for (let i = options.states.length - 1; i >= 0; i--) {
 			_c.states[options.states[i]] = true;
 		}
+	}
+	if(options.urlPrefix)
+	{
+		//TODO add validation
+		_c.urlPrefix = options.urlPrefix;
+	}
+	if(options.endpoint)
+	{
+		_c.endpoint = options.endpoint;
 	}
 	if(options.originPath)
 	{
@@ -102,10 +115,10 @@ module.exports = function (options) {
 	{
 		if(files.length == 0) return callback();
 
-		files = files.map(function(file)
-		{
-			return '/' + file;
-		});
+		// files = files.map(function(file)
+		// {
+		// 	return '/' + file;
+		// });
 		/*
 Requests
 Requests must be sent over HTTPS with any payload formatted in JSON. Depending on if a request is authenticated with the new API Tokens or the old API Keys, required headers differ and are detailed below.
@@ -124,7 +137,7 @@ curl -X GET "https://api.cloudflare.com/client/v4/zones/cd7d0123e3012345da9420df
      -H "Content-Type:application/json" \
      -H "Authorization: Bearer YQSn-xWAQiiEh9qM58wZNnyQS7FUdoqGIUAbrh7T"
 API Keys
-All requests must include both  and  headers to authenticate. Requests that use  can use that instead of the Auth-Key and Auth-Email headers.
+All requests must include both X-AUTH-KEY and X-AUTH_EMAIL headers to authenticate. Requests that use X-AUTH-USER-SERVICE-KEY  can use that instead of the Auth-Key and Auth-Email headers.
 Required parameters
 Name	Format	Description
 API Key	X-Auth-Key	API key generated on the "My Account" page
@@ -173,14 +186,29 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/023e105f4ecef8ad9ca31a8
 Response:
 		*/
 		let d = {
-			files: files.map((f) => { return '/' + file })
+			files: files.map((f) => { return _c.urlPrefix + f })
 		}
 		let h = {
-			'X-Auth-Key': _c.token,
-			'X-Auth-Email': _c.email,
 			'Content-Type': 'application/json'
 		}
+		if(_c.token)
+		{
+			h.Authorization = "Bearer " + _c.token;
+		}
+		else
+		{
+			h['X-Auth-Key'] = _c.key;
+			h['X-Auth-Email'] = _c.email;
+		}
+		fetch(_c.endpoint, {
+			method: 'POST',
+			headers: h,
+			body: JSON.stringify(d),
+		})
+			.then(res => res.json())
+			.then(json => console.log(json))
 
+		/*
 		cloudfront.createInvalidation({
 			DistributionId: options.distribution,
 			InvalidationBatch: {
@@ -202,6 +230,7 @@ Response:
 
 			check(res.Invalidation.Id, callback);
 		});
+		*/
 	};
 
 	return through.obj(processFile, invalidate);
